@@ -1,0 +1,9 @@
+python-telegram-bot[job-queue]
+fastapi
+uvicorn[standard]
+yfinance
+pandas
+pytz
+httpx
+ta
+numpy

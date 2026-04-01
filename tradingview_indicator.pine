@@ -1,0 +1,316 @@
+// =========================================================================
+// ABOOD القناص V3.0 - FREE All-in-One Indicator
+// =========================================================================
+// 🆓 100% FREE - Replaces GainzAlgo + LuxAlgo
+// Pine Script V6 - Latest Version
+// Uses alert() instead of alertcondition() for dynamic data
+// =========================================================================
+
+//@version=6
+indicator("ABOOD القناص V3.0", shorttitle="ABOOD V3", overlay=true, max_labels_count=50, max_boxes_count=50)
+
+// =========================================================================
+// INPUTS
+// =========================================================================
+
+grpScore = "🎯 Scoring"
+minScore = input.float(2.5, title="Min Score for Signal", group=grpScore)
+minIndicators = input.int(3, title="Min Confirming Indicators", group=grpScore)
+
+grpEMA = "📊 EMA"
+emaFast = input.int(9, title="EMA Fast", group=grpEMA)
+emaSlow = input.int(21, title="EMA Slow", group=grpEMA)
+
+grpBB = "📊 Bollinger Bands"
+bbLen = input.int(20, title="BB Length", group=grpBB)
+bbMult = input.float(2.0, title="BB Multiplier", group=grpBB)
+
+grpRSI = "📊 RSI"
+rsiLen = input.int(14, title="RSI Length", group=grpRSI)
+rsiOB = input.int(65, title="RSI Overbought", group=grpRSI)
+rsiOS = input.int(35, title="RSI Oversold", group=grpRSI)
+
+grpStoch = "📊 Stochastic"
+stochK = input.int(14, title="Stoch %K", group=grpStoch)
+stochD = input.int(3, title="Stoch %D", group=grpStoch)
+stochSmooth = input.int(3, title="Stoch Smooth", group=grpStoch)
+stochOB = input.int(80, title="Stoch Overbought", group=grpStoch)
+stochOS = input.int(20, title="Stoch Oversold", group=grpStoch)
+
+grpADX = "📊 ADX"
+adxLen = input.int(14, title="ADX Length", group=grpADX)
+adxThresh = input.float(25, title="ADX Threshold", group=grpADX)
+
+grpSMC = "🏦 Smart Money (Order Blocks)"
+enableSMC = input.bool(true, title="Enable OB Filter", group=grpSMC)
+obLookback = input.int(10, title="OB Lookback", group=grpSMC)
+obImpulse = input.float(1.5, title="Min Impulse (ATR x)", group=grpSMC)
+showOB = input.bool(true, title="Show OB on Chart", group=grpSMC)
+
+grpWH = "🔗 Webhook"
+webhookSecret = input.string("abood_v3_secret", title="Secret", group=grpWH)
+
+// =========================================================================
+// CALCULATIONS
+// =========================================================================
+emaF = ta.ema(close, emaFast)
+emaS = ta.ema(close, emaSlow)
+
+basis = ta.sma(close, bbLen)
+devBB = bbMult * ta.stdev(close, bbLen)
+upperBB = basis + devBB
+lowerBB = basis - devBB
+
+rsi = ta.rsi(close, rsiLen)
+
+k = ta.sma(ta.stoch(close, high, low, stochK), stochSmooth)
+d_line = ta.sma(k, stochD)
+
+[diPlus, diMinus, adxVal] = ta.dmi(adxLen, adxLen)
+
+atr = ta.atr(14)
+
+// =========================================================================
+// 🏦 ORDER BLOCK DETECTION
+// =========================================================================
+bullishImpulse = close > open and (close - open) > atr * obImpulse
+bearishImpulse = close < open and (open - close) > atr * obImpulse
+
+var float bullOB_high = na
+var float bullOB_low = na
+var int bullOB_bar = na
+var bool bullOB_active = false
+
+var float bearOB_high = na
+var float bearOB_low = na
+var int bearOB_bar = na
+var bool bearOB_active = false
+
+if bullishImpulse
+    for i = 1 to obLookback
+        if close[i] < open[i]
+            bullOB_high := high[i]
+            bullOB_low := low[i]
+            bullOB_bar := bar_index - i
+            bullOB_active := true
+            break
+
+if bearishImpulse
+    for i = 1 to obLookback
+        if close[i] > open[i]
+            bearOB_high := high[i]
+            bearOB_low := low[i]
+            bearOB_bar := bar_index - i
+            bearOB_active := true
+            break
+
+if bullOB_active and close < bullOB_low
+    bullOB_active := false
+if bearOB_active and close > bearOB_high
+    bearOB_active := false
+
+priceNearBullOB = bullOB_active and close >= bullOB_low - atr * 0.5 and close <= bullOB_high + atr * 0.5
+priceNearBearOB = bearOB_active and close >= bearOB_low - atr * 0.5 and close <= bearOB_high + atr * 0.5
+
+obBullish = priceNearBullOB
+obBearish = priceNearBearOB
+
+// Draw OB
+if showOB and bullOB_active and barstate.islast
+    box.new(bullOB_bar, bullOB_high, bar_index, bullOB_low, bgcolor=color.new(color.green, 85), border_color=color.green)
+if showOB and bearOB_active and barstate.islast
+    box.new(bearOB_bar, bearOB_high, bar_index, bearOB_low, bgcolor=color.new(color.red, 85), border_color=color.red)
+
+// =========================================================================
+// 🎯 SCORING
+// =========================================================================
+var float callScore = 0.0
+var float putScore = 0.0
+var int callCount = 0
+var int putCount = 0
+
+callScore := 0.0
+putScore := 0.0
+callCount := 0
+putCount := 0
+
+// BB
+if close <= lowerBB
+    callScore += 1.2
+    callCount += 1
+else
+    bbWidth = upperBB - lowerBB
+    if bbWidth > 0
+        if (close - lowerBB) / bbWidth < 0.15
+            callScore += 0.7
+            callCount += 1
+
+if close >= upperBB
+    putScore += 1.2
+    putCount += 1
+else
+    bbWidth2 = upperBB - lowerBB
+    if bbWidth2 > 0
+        if (upperBB - close) / bbWidth2 < 0.15
+            putScore += 0.7
+            putCount += 1
+
+// RSI
+if rsi <= rsiOS
+    callScore += 1.2
+    callCount += 1
+else if rsi <= 40
+    callScore += 0.5
+    callCount += 1
+
+if rsi >= rsiOB
+    putScore += 1.2
+    putCount += 1
+else if rsi >= 60
+    putScore += 0.5
+    putCount += 1
+
+// EMA
+emaBullCross = emaF > emaS and emaF[1] <= emaS[1]
+emaBearCross = emaF < emaS and emaF[1] >= emaS[1]
+
+if emaBullCross
+    callScore += 1.5
+    callCount += 1
+else if emaF > emaS
+    callScore += 0.5
+    callCount += 1
+
+if emaBearCross
+    putScore += 1.5
+    putCount += 1
+else if emaF < emaS
+    putScore += 0.5
+    putCount += 1
+
+// Stochastic
+if k <= stochOS and k > d_line
+    callScore += 1.2
+    callCount += 1
+else if k <= stochOS
+    callScore += 0.6
+    callCount += 1
+
+if k >= stochOB and k < d_line
+    putScore += 1.2
+    putCount += 1
+else if k >= stochOB
+    putScore += 0.6
+    putCount += 1
+
+// ADX
+if adxVal >= adxThresh
+    if diPlus > diMinus
+        callScore += 0.6
+        callCount += 1
+    else
+        putScore += 0.6
+        putCount += 1
+
+// Candle Patterns
+bodyCurr = close - open
+bodyPrev = close[1] - open[1]
+
+if bodyPrev < 0 and bodyCurr > 0 and math.abs(bodyCurr) > math.abs(bodyPrev) * 1.2
+    callScore += 0.8
+    callCount += 1
+
+if bodyPrev > 0 and bodyCurr < 0 and math.abs(bodyCurr) > math.abs(bodyPrev) * 1.2
+    putScore += 0.8
+    putCount += 1
+
+// Hammer / Shooting Star
+rangeCurr = high - low
+if rangeCurr > 0
+    lowerWick = math.min(open, close) - low
+    upperWick = high - math.max(open, close)
+    abBody = math.abs(bodyCurr)
+    if abBody > 0
+        if lowerWick > abBody * 2 and upperWick < abBody * 0.5
+            callScore += 0.6
+            callCount += 1
+        if upperWick > abBody * 2 and lowerWick < abBody * 0.5
+            putScore += 0.6
+            putCount += 1
+
+// Momentum
+roc3 = (close - close[3]) / close[3] * 100
+if roc3 > 0.08
+    callScore += 0.4
+    callCount += 1
+if roc3 < -0.08
+    putScore += 0.4
+    putCount += 1
+
+// SMC Bonus
+if enableSMC
+    if obBullish
+        callScore += 1.0
+        callCount += 1
+    if obBearish
+        putScore += 1.0
+        putCount += 1
+
+// =========================================================================
+// SIGNAL GENERATION
+// =========================================================================
+scoreDiff = math.abs(callScore - putScore)
+callSignal = callScore >= minScore and callScore > putScore and callCount >= minIndicators and scoreDiff >= 1.0
+putSignal = putScore >= minScore and putScore > callScore and putCount >= minIndicators and scoreDiff >= 1.0
+
+// SMC conflict filter
+if enableSMC
+    if callSignal and not obBullish and obBearish
+        callSignal := false
+    if putSignal and not obBearish and obBullish
+        putSignal := false
+
+// Wick filter
+wickBody = math.abs(bodyCurr)
+if wickBody > 0.00001
+    lw2 = math.min(open, close) - low
+    uw2 = high - math.max(open, close)
+    if callSignal and lw2 / wickBody > 0.4
+        callSignal := false
+    if putSignal and uw2 / wickBody > 0.4
+        putSignal := false
+
+// =========================================================================
+// PLOTTING
+// =========================================================================
+plot(emaF, color=color.new(color.green, 30), linewidth=2, title="EMA Fast")
+plot(emaS, color=color.new(color.red, 30), linewidth=2, title="EMA Slow")
+p1 = plot(upperBB, color=color.new(color.blue, 60), title="BB Upper")
+p2 = plot(lowerBB, color=color.new(color.blue, 60), title="BB Lower")
+fill(p1, p2, color=color.new(color.blue, 92))
+
+plotshape(callSignal, title="CALL", location=location.belowbar, color=color.green, style=shape.triangleup, size=size.normal, text="CALL")
+plotshape(putSignal, title="PUT", location=location.abovebar, color=color.red, style=shape.triangledown, size=size.normal, text="PUT")
+
+// Score labels
+if callSignal
+    txt = "S:" + str.tostring(callScore, "#.#") + " I:" + str.tostring(callCount)
+    label.new(bar_index, low, txt, style=label.style_label_up, color=color.green, textcolor=color.white, size=size.small)
+if putSignal
+    txt = "S:" + str.tostring(putScore, "#.#") + " I:" + str.tostring(putCount)
+    label.new(bar_index, high, txt, style=label.style_label_down, color=color.red, textcolor=color.white, size=size.small)
+
+// =========================================================================
+// ALERTS - Using alert() for dynamic messages (v6 compatible!)
+// =========================================================================
+
+// Determine OB type as string
+obTypeStr = obBullish ? "bullish" : (obBearish ? "bearish" : "none")
+
+if callSignal
+    alertMsg = '{"secret": "' + webhookSecret + '", "symbol": "' + syminfo.ticker + '", "signal": "CALL", "price": "' + str.tostring(close) + '", "open": "' + str.tostring(open) + '", "high": "' + str.tostring(high) + '", "low": "' + str.tostring(low) + '", "close": "' + str.tostring(close) + '", "score": "' + str.tostring(callScore) + '", "indicators": "' + str.tostring(callCount) + '", "ob_type": "' + obTypeStr + '"}'
+    alert(alertMsg, alert.freq_once_per_bar)
+
+if putSignal
+    alertMsg = '{"secret": "' + webhookSecret + '", "symbol": "' + syminfo.ticker + '", "signal": "PUT", "price": "' + str.tostring(close) + '", "open": "' + str.tostring(open) + '", "high": "' + str.tostring(high) + '", "low": "' + str.tostring(low) + '", "close": "' + str.tostring(close) + '", "score": "' + str.tostring(putScore) + '", "indicators": "' + str.tostring(putCount) + '", "ob_type": "' + obTypeStr + '"}'
+    alert(alertMsg, alert.freq_once_per_bar)

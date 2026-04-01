@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: abood-trading-bot
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
+    healthCheckPath: /
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: WEBHOOK_SECRET
+        value: abood_v3_secret
+      - key: ENABLE_INTERNAL_SCANNER
+        value: "true"
+      - key: PYTHON_VERSION
+        value: "3.11.0"
